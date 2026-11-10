@@ -10,6 +10,7 @@ UaFloors の `ua-post-media` を土台にしています。
 3. 冒頭に時期の告知（`intros.json`）、末尾にエンディング（`config.json` の `ending`）をつなぎ、1080×1920 にそろえて書き出す
 4. `media` ブランチに一時的に置いて Instagram に渡し、20:00 に投稿する。投稿後は `media` を空にする
 5. `state/posted.json` に記録する（同じ動画は二度出さない）
+6. **4日に1回（リール3本ごと）はフィードの日**。`feed/<名前>/1.jpg…` ＋ `caption.txt` をカルーセルで出す。feed は尽きたら最初から繰り返す（`config.json` の `feed_every`）
 
 ## 担当の方の運用
 
@@ -24,6 +25,7 @@ UaFloors の `ua-post-media` を土台にしています。
 | `config.json` | 投稿時刻、開始位置（`start_from`）、エンディング、カバー位置 |
 | `intros.json` | 冒頭に挟む告知。`from`〜`until` の期間だけ使う |
 | `skip.txt` | 投稿しない動画（名前の一部でよい） |
+| `feed/` | フィード用の施工事例（画像はJPEG。1080×1350） |
 | `assets/` | 告知・エンディングの動画を置く場所（`"drive:<ID>"` でドライブから直接も可） |
 
 ## Secrets（Settings → Secrets and variables → Actions）

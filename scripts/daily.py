@@ -390,6 +390,95 @@ def wait_until(target_hhmm: str):
     time.sleep(delta)
 
 
+# ---------------------------------------------------------------- フィード（カルーセル）
+
+FEED_DIR = ROOT / "feed"
+
+
+def feed_items() -> list[dict]:
+    """feed/<名前>/1.jpg, 2.jpg … ＋ caption.txt を1投稿とする。名前順。"""
+    out = []
+    if not FEED_DIR.exists():
+        return out
+    for d in sorted(p for p in FEED_DIR.iterdir() if p.is_dir()):
+        imgs = sorted((p for p in d.iterdir() if p.suffix.lower() in (".jpg", ".jpeg")),
+                      key=lambda p: int(p.stem) if p.stem.isdigit() else 999)
+        cap = d / "caption.txt"
+        if imgs and cap.exists():
+            out.append({"name": d.name, "images": imgs,
+                        "caption": cap.read_text(encoding="utf-8").strip()})
+    return out
+
+
+def is_feed_day(posted: list[dict]) -> bool:
+    """直近のリールが (feed_every - 1) 本続いていたらフィードの番。例: 4 → リール3本ごとにフィード1本。"""
+    every = int(CONFIG.get("feed_every") or 0)
+    if every < 2 or not feed_items():
+        return False
+    streak = 0
+    for p in reversed(posted):
+        if p.get("type") == "feed":
+            break
+        streak += 1
+    return streak >= every - 1
+
+
+def next_feed(posted: list[dict]) -> dict:
+    """出した回数が一番少ないもの（同数なら名前順）。尽きたら最初から繰り返す。"""
+    items = feed_items()
+    count = {i["name"]: 0 for i in items}
+    for p in posted:
+        if p.get("type") == "feed" and p.get("name") in count:
+            count[p["name"]] += 1
+    return min(items, key=lambda i: count[i["name"]])
+
+
+def post_carousel(item: dict, today: str):
+    repo = os.environ.get("GITHUB_REPOSITORY", "diskiwk-star/senjo-post-media")
+    urls = [f"https://raw.githubusercontent.com/{repo}/main/feed/{item['name']}/{p.name}"
+            for p in item["images"]]
+    print("---- キャプション ----\n" + item["caption"] + "\n----------------------")
+    for url in urls:
+        print(f"  画像: {url}")
+    if len(item["caption"]) > 2200:
+        raise SystemExit("キャプションが2,200字を超えています")
+    if DRY_RUN:
+        print("[DRY RUN] 投稿はしません。")
+        return None
+    if not TOKEN or not USER_ID:
+        print("::notice::IG_ACCESS_TOKEN / IG_USER_ID が未設定のため、投稿せずに終了します")
+        return None
+
+    if os.environ.get("POST_NOW") == "1":
+        print("手動実行のため、待たずに投稿します。")
+    else:
+        wait_until(CONFIG.get("post_time", "20:00"))
+    if already_posted_today(today, item["caption"]):
+        print("同じ内容が今日すでに投稿されています。二重投稿を避けて終了。")
+        return {"skipped": True}
+
+    if len(urls) == 1:
+        c = api("POST", f"/{USER_ID}/media", {"image_url": urls[0], "caption": item["caption"]})
+    else:
+        children = []
+        for url in urls:
+            children.append(api("POST", f"/{USER_ID}/media",
+                                {"image_url": url, "is_carousel_item": "true"})["id"])
+            time.sleep(2)
+        c = api("POST", f"/{USER_ID}/media", {"media_type": "CAROUSEL",
+                                              "children": ",".join(children),
+                                              "caption": item["caption"]})
+    res = publish(c["id"])
+    media_id = res.get("id", "")
+    link = ""
+    try:
+        link = api("GET", f"/{media_id}", {"fields": "permalink"}).get("permalink", "")
+    except Exception:
+        pass
+    print(f"投稿しました: {media_id} {link}")
+    return {"media_id": media_id, "permalink": link}
+
+
 # ---------------------------------------------------------------- 本体
 
 def show_list(plan: list[dict]):
@@ -420,6 +509,12 @@ def main():
     if "--list" in sys.argv:
         in_doc = {p["video"]["id"] for p in plan if p["video"]}
         show_list(plan)
+        fi = feed_items()
+        posted = load_posted()
+        print(f"\n■ フィード（{CONFIG.get('feed_every')}日に1回・{len(fi)}件を繰り返し）"
+              f" 次回が今日なら: {'はい' if is_feed_day(posted) else 'いいえ'}")
+        if fi:
+            print(f"  次のフィード: {next_feed(posted)['name']}")
         rest = [v["name"] for v in videos if v["id"] not in in_doc]
         if rest:
             print("\n■ フォルダにあるが、文書にキャプションが無い動画（投稿されない）")
@@ -430,6 +525,24 @@ def main():
     done = DONE_DIR / f"{today}.done"
     if done.exists():
         print(f"{today} は投稿済み。終了。")
+        return
+
+    posted = load_posted()
+    force = os.environ.get("FORCE_KIND", "")
+    if force == "feed" or (force != "reel" and is_feed_day(posted)):
+        item = next_feed(posted)
+        n = sum(1 for p in posted if p.get("type") == "feed" and p.get("name") == item["name"])
+        print(f"date={today} dry_run={DRY_RUN}")
+        print(f"今日はフィードの日: {item['name']}（画像{len(item['images'])}枚・{n + 1}回目）")
+        res = post_carousel(item, today)
+        if res and not res.get("skipped"):
+            posted.append({"date": today, "type": "feed", "name": item["name"],
+                           "media_id": res["media_id"], "permalink": res["permalink"]})
+            POSTED_FILE.write_text(json.dumps(posted, ensure_ascii=False, indent=1) + "\n",
+                                   encoding="utf-8")
+        if res:
+            DONE_DIR.mkdir(parents=True, exist_ok=True)
+            done.write_text(datetime.now(JST).isoformat(), encoding="utf-8")
         return
 
     nxt = upcoming(plan)
@@ -527,7 +640,7 @@ def main():
     print(f"投稿しました: {media_id} {link}")
 
     posted = load_posted()
-    posted.append({"date": today, "name": v["name"], "drive_id": v["id"], "title": item["title"],
+    posted.append({"date": today, "type": "reel", "name": v["name"], "drive_id": v["id"], "title": item["title"],
                    "media_id": media_id, "permalink": link,
                    "intro": intro["label"] if intro else "", "ending": ending})
     POSTED_FILE.write_text(json.dumps(posted, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
