@@ -1,0 +1,10 @@
+[
+  {
+    "_例": "この行は使われない（enabled:false）。時期の告知を冒頭に挟みたいときは、下の形で足す",
+    "enabled": false,
+    "label": "年末受付のお知らせ",
+    "file": "intro_nenmatsu.mp4",
+    "from": "2026-11-15",
+    "until": "2026-12-20"
+  }
+]

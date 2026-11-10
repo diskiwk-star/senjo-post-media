@@ -1,0 +1,21 @@
+{
+  "_説明": "洗浄バスターズ Instagram 自動投稿の設定。編集したら commit & push すれば次回から反映される。",
+
+  "folder_id": "",
+  "_folder_id": "空ならActionsの変数 DRIVE_FOLDER_ID を使う（公開リポジトリなのでIDはここに書かない）。Googleドライブ「SNS用動画」の直下の動画だけを対象にする",
+
+  "caption_doc_id": "",
+  "_caption_doc_id": "空ならActionsの変数 CAPTION_DOC_ID を使う。Googleドキュメント「SNSキャプション例」。見出し（### 動画名）＋本文＝キャプション。ここに載っている動画だけを、載っている順に投稿する",
+
+  "post_time": "20:00",
+  "_post_time": "投稿時刻（JST）。変えるときは .github/workflows/post.yml の cron も合わせて直す",
+
+  "start_from": "",
+  "_start_from": "空なら文書の先頭から。動画名の一部（例 \"2609_\"）を書くと、文書でその動画より前の分は飛ばす",
+
+  "ending": "",
+  "_ending": "毎回末尾につなぐ動画。空ならつながない。assets/ の中のファイル名、または \"drive:<ファイルID>\"",
+
+  "cover_offset_sec": 0,
+  "_cover_offset_sec": "カバー（サムネイル）にする本編の位置（秒）。0 なら本編の1コマ目。冒頭に告知を挟んだ日も、本編の位置で数える"
+}

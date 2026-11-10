@@ -1,0 +1,68 @@
+name: post (毎日 20:00 JST リール)
+
+# Googleドライブ「SNS用動画」とキャプション文書から次の1本を選び、
+# 告知（冒頭）・エンディング（末尾）をつないで 20:00 にリール投稿する。
+# GitHubの定時実行は遅れることがあるので早めに起動し、daily.py 側で20:00まで待つ。
+# 予備を2本置き、state/done/YYYY-MM-DD.done とAPI確認で二重投稿を防ぐ。
+on:
+  schedule:
+    - cron: '43 9 * * *'    # JST 18:43 本命
+    - cron: '43 10 * * *'   # JST 19:43 予備1
+    - cron: '13 11 * * *'   # JST 20:13 予備2
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'list=投稿順の確認 / dry_run=書き出しまで（投稿しない） / post=今すぐ投稿'
+        type: choice
+        options: [list, dry_run, post]
+        default: list
+
+permissions:
+  contents: write
+
+concurrency:
+  # 投稿中の実行を途中で止めないよう、後から来た実行は待たせる
+  group: senjo-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 最新の投稿記録を取り込む（予備の実行が古い状態で動かないように）
+        run: git pull -q --ff-only origin "${GITHUB_REF_NAME}" || true
+
+      - name: ffmpeg を用意
+        if: inputs.mode != 'list'
+        run: |
+          which ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          ffmpeg -version | head -1
+
+      - name: 投稿
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+          CAPTION_DOC_ID: ${{ secrets.CAPTION_DOC_ID }}
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode || 'post' }}
+        run: |
+          case "$MODE" in
+            list)    python3 scripts/daily.py --list ;;
+            dry_run) DRY_RUN=1 python3 scripts/daily.py ;;
+            post)
+              # 手動の「今すぐ投稿」は待たずに出す
+              if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then export POST_NOW=1; fi
+              python3 scripts/daily.py ;;
+          esac
+
+      - name: 投稿記録を保存
+        if: always() && inputs.mode != 'list' && inputs.mode != 'dry_run'
+        run: |
+          git config user.name "senjo-autopost-bot"
+          git config user.email "actions@github.com"
+          git add state/ 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "posted $(TZ=Asia/Tokyo date +%F)" && git pull -q --rebase && git push)

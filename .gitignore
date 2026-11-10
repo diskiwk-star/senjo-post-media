@@ -1,0 +1,4 @@
+out/
+.env.local
+.DS_Store
+__pycache__/
