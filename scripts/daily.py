@@ -449,7 +449,9 @@ def main():
         raise SystemExit("ハッシュタグが30個を超えています")
 
     if not DRY_RUN and (not TOKEN or not USER_ID):
-        raise SystemExit("IG_ACCESS_TOKEN / IG_USER_ID が未設定です")
+        # 初期設定が終わるまでは毎日失敗扱いにしない
+        print("::notice::IG_ACCESS_TOKEN / IG_USER_ID が未設定のため、投稿せずに終了します")
+        return
 
     intro = active_intro(today_d)
     ending = CONFIG.get("ending") or ""
