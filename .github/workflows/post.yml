@@ -14,8 +14,12 @@ on:
       mode:
         description: 'list=投稿順の確認 / dry_run=書き出しまで（投稿しない） / post=今すぐ投稿'
         type: choice
-        options: [list, dry_run, post, history]
+        options: [list, dry_run, post, history, oneoff]
         default: list
+      oneoff:
+        description: 'mode=oneoff のとき: oneoff/ の下のフォルダ名（1回だけのフィード投稿）'
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -36,7 +40,7 @@ jobs:
         run: git pull -q --ff-only origin "${GITHUB_REF_NAME}" || true
 
       - name: ffmpeg を用意
-        if: inputs.mode != 'list' && inputs.mode != 'history'
+        if: inputs.mode != 'list' && inputs.mode != 'history' && inputs.mode != 'oneoff'
         run: |
           which ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
           ffmpeg -version | head -1
@@ -53,6 +57,7 @@ jobs:
           case "$MODE" in
             list)    python3 scripts/daily.py --list ;;
             history) python3 scripts/inspect_history.py ;;
+            oneoff)  ONEOFF='${{ inputs.oneoff }}' python3 scripts/post_oneoff.py ;;
             dry_run) DRY_RUN=1 python3 scripts/daily.py ;;
             post)
               # 手動の「今すぐ投稿」は待たずに出す
