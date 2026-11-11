@@ -419,6 +419,8 @@ def is_feed_day(posted: list[dict]) -> bool:
     for p in reversed(posted):
         if p.get("type") == "feed":
             break
+        if p.get("extra"):
+            continue
         streak += 1
     return streak >= every - 1
 
@@ -523,6 +525,12 @@ def main():
         return
 
     done = DONE_DIR / f"{today}.done"
+    extra = os.environ.get("EXTRA") == "1"
+    if extra:
+        # 追加の1本（手動）。その日の記録（done）は付けず、4日に1回の数え方にも入れない
+        done = Path(tempfile.mkdtemp(prefix="senjo_extra_")) / "extra.done"
+        os.environ["FORCE_KIND"] = "reel"
+        os.environ["POST_NOW"] = "1"
     if done.exists():
         print(f"{today} は投稿済み。終了。")
         return
@@ -616,7 +624,7 @@ def main():
     else:
         wait_until(CONFIG.get("post_time", "17:00"))
 
-    if already_posted_today(today, caption):
+    if not extra and already_posted_today(today, caption):
         print("同じ内容が今日すでに投稿されています。二重投稿を避けて終了。")
         DONE_DIR.mkdir(parents=True, exist_ok=True)
         done.write_text(datetime.now(JST).isoformat(), encoding="utf-8")
@@ -642,7 +650,8 @@ def main():
     posted = load_posted()
     posted.append({"date": today, "type": "reel", "name": v["name"], "drive_id": v["id"], "title": item["title"],
                    "media_id": media_id, "permalink": link,
-                   "intro": intro["label"] if intro else "", "ending": ending})
+                   "intro": intro["label"] if intro else "", "ending": ending,
+                   **({"extra": True} if extra else {})})
     POSTED_FILE.write_text(json.dumps(posted, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     DONE_DIR.mkdir(parents=True, exist_ok=True)
     done.write_text(datetime.now(JST).isoformat(), encoding="utf-8")
