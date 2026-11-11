@@ -452,7 +452,7 @@ def post_carousel(item: dict, today: str):
     if os.environ.get("POST_NOW") == "1":
         print("手動実行のため、待たずに投稿します。")
     else:
-        wait_until(CONFIG.get("post_time", "20:00"))
+        wait_until(CONFIG.get("post_time", "17:00"))
     if already_posted_today(today, item["caption"]):
         print("同じ内容が今日すでに投稿されています。二重投稿を避けて終了。")
         return {"skipped": True}
@@ -614,7 +614,7 @@ def main():
     if os.environ.get("POST_NOW") == "1":
         print("手動実行のため、待たずに投稿します。")
     else:
-        wait_until(CONFIG.get("post_time", "20:00"))
+        wait_until(CONFIG.get("post_time", "17:00"))
 
     if already_posted_today(today, caption):
         print("同じ内容が今日すでに投稿されています。二重投稿を避けて終了。")
