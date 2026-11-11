@@ -1,0 +1,55 @@
+name: post-kick (見張り役からの起動)
+
+# 定時実行（schedule）が混雑で起動しない・大きく遅れるとき用の起動口。
+# クラウドの見張り役は GitHub の起動ボタン（workflow_dispatch）を押せないので、
+# 代わりに kick/request.txt を書いた合図ブランチ（claude/kick-* など）を push する。
+# push での起動は遅れにくい。投稿と記録は main に対して行い、合図ブランチは最後に消す。
+# post.yml と同じ concurrency グループなので、投稿中の実行があれば終わるまで待ち、
+# その後は state/done/YYYY-MM-DD.done を見て二重投稿せずに終わる。
+on:
+  push:
+    branches-ignore: [main, media]
+    paths: ['kick/request.txt']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: senjo-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - name: main を取得（投稿の順番と記録は main が正）
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: ffmpeg を用意
+        run: |
+          which ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          ffmpeg -version | head -1
+
+      - name: 投稿（17:00 前なら 17:00 まで待ち、過ぎていればすぐ出す）
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+          CAPTION_DOC_ID: ${{ secrets.CAPTION_DOC_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "合図ブランチ: ${GITHUB_REF_NAME}"
+          git pull -q --ff-only origin main || true
+          python3 scripts/daily.py
+
+      - name: 投稿記録を main に保存し、合図ブランチを消す
+        if: always()
+        run: |
+          git config user.name "senjo-autopost-bot"
+          git config user.email "actions@github.com"
+          git add state/ 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "posted (kick) $(TZ=Asia/Tokyo date +%F)" && git pull -q --rebase origin main && git push origin HEAD:main)
+          git push origin --delete "${GITHUB_REF_NAME}" || true
