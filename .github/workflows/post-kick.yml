@@ -28,22 +28,42 @@ jobs:
         with:
           ref: main
 
+      - name: 合図を読む（post / story-1200 / story-1800。何も書いていなければ post）
+        id: req
+        run: |
+          git fetch -q origin "${GITHUB_SHA}"
+          REQ=$(git show "${GITHUB_SHA}:kick/request.txt" | tr -d '\r' | grep -E '^(post|story-1200|story-1800)$' | sort -u | tr '\n' ' ')
+          [ -z "$REQ" ] && REQ="post"
+          echo "合図ブランチ: ${GITHUB_REF_NAME} / 要求: $REQ"
+          echo "slots=$REQ" >> "$GITHUB_OUTPUT"
+
       - name: ffmpeg を用意
+        if: contains(steps.req.outputs.slots, 'post')
         run: |
           which ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
           ffmpeg -version | head -1
 
-      - name: 投稿（17:00 前なら 17:00 まで待ち、過ぎていればすぐ出す）
+      - name: 実行（目標時刻前なら待ち、過ぎていればすぐ出す）
         env:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
           CAPTION_DOC_ID: ${{ secrets.CAPTION_DOC_ID }}
           GH_TOKEN: ${{ github.token }}
+          SLOTS: ${{ steps.req.outputs.slots }}
         run: |
-          echo "合図ブランチ: ${GITHUB_REF_NAME}"
           git pull -q --ff-only origin main || true
-          python3 scripts/daily.py
+          RC=0
+          for s in story-1200 post story-1800; do
+            case " $SLOTS " in *" $s "*) ;; *) continue ;; esac
+            echo "=== $s ==="
+            case $s in
+              post)       python3 scripts/daily.py || RC=1 ;;
+              story-1200) SLOT=12:00 python3 scripts/story.py || RC=1 ;;
+              story-1800) SLOT=18:00 python3 scripts/story.py || RC=1 ;;
+            esac
+          done
+          exit $RC
 
       - name: 投稿記録を main に保存し、合図ブランチを消す
         if: always()

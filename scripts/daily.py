@@ -362,6 +362,30 @@ def publish(cid: str) -> dict:
     raise RuntimeError(f"公開の再試行が上限に達しました: {last}")
 
 
+def post_story(url: str, video: bool) -> str:
+    """ストーリーズに1枚（1本）出す。戻り値は media_id。"""
+    key = "video_url" if video else "image_url"
+    c = api("POST", f"/{USER_ID}/media", {"media_type": "STORIES", key: url})
+    if video:
+        wait_container(c["id"])
+    else:
+        time.sleep(5)
+    return publish(c["id"]).get("id", "")
+
+
+def story_after(urls: list[str], video: bool, label: str):
+    """リール・フィードを出したあと、同じ中身をストーリーズにも出す（失敗しても本投稿は成功扱い）。"""
+    if not CONFIG.get("story_after_post", True):
+        return
+    for u in urls:
+        try:
+            sid = post_story(u, video)
+            print(f"  ストーリーズにも投稿: {sid}（{label}）")
+        except Exception as e:
+            print(f"::warning::ストーリーズへの投稿に失敗（{label}）: {e}")
+        time.sleep(3)
+
+
 def already_posted_today(today: str, caption: str) -> bool:
     head = caption[:20].strip()
     try:
@@ -478,6 +502,7 @@ def post_carousel(item: dict, today: str):
     except Exception:
         pass
     print(f"投稿しました: {media_id} {link}")
+    story_after(urls, False, f"フィード {item['name']}")
     return {"media_id": media_id, "permalink": link}
 
 
@@ -646,6 +671,20 @@ def main():
     except Exception:
         pass
     print(f"投稿しました: {media_id} {link}")
+
+    # 同じ動画をストーリーズにも。ストーリーズは60秒までなので、長いときは頭から59秒に切る
+    if CONFIG.get("story_after_post", True):
+        try:
+            s_url = url
+            if dur > 59.5:
+                s_path = work / f"{today}_story.mp4"
+                subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(out_path), "-t", "59",
+                                "-c", "copy", "-movflags", "+faststart", str(s_path)], check=True)
+                s_url = push_media(s_path, s_path.name)
+                wait_url(s_url, s_path.stat().st_size)
+            story_after([s_url], True, f"リール {v['name']}")
+        except Exception as e:
+            print(f"::warning::ストーリーズ用の準備に失敗: {e}")
 
     posted = load_posted()
     posted.append({"date": today, "type": "reel", "name": v["name"], "drive_id": v["id"], "title": item["title"],

@@ -1,0 +1,55 @@
+name: story (毎日 12:00 / 18:00 JST ストーリーズ)
+
+# stories.json の枠ごとに、期間内のストーリーズを出す。
+# GitHubの定時実行は遅れるので早めに起動して story.py 側で目標時刻まで待つ。
+# それでも起動しないときは、クラウドの見張り役が kick（post-kick.yml）で起動する。
+on:
+  schedule:
+    - cron: '43 1 * * *'    # JST 10:43 → 12:00 枠
+    - cron: '43 2 * * *'    # JST 11:43 → 12:00 枠（予備）
+    - cron: '43 7 * * *'    # JST 16:43 → 18:00 枠
+    - cron: '43 8 * * *'    # JST 17:43 → 18:00 枠（予備）
+  workflow_dispatch:
+    inputs:
+      slot:
+        description: '枠（12:00 / 18:00）。手動は待たずに今すぐ出す'
+        type: choice
+        options: ['12:00', '18:00']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: senjo-story
+  cancel-in-progress: false
+
+jobs:
+  story:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: 最新の記録を取り込む
+        run: git pull -q --ff-only origin main || true
+      - name: ストーリーズ
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SLOT='${{ inputs.slot }}'; export POST_NOW=1
+          else
+            # どの cron から起動したかで枠を決める（遅れて起動しても枠を取り違えない）
+            case "${{ github.event.schedule }}" in
+              '43 1 * * *'|'43 2 * * *') SLOT=12:00 ;;
+              *) SLOT=18:00 ;;
+            esac
+          fi
+          SLOT=$SLOT python3 scripts/story.py
+      - name: 記録を保存
+        if: always()
+        run: |
+          git config user.name "senjo-autopost-bot"
+          git config user.email "actions@github.com"
+          git add state/ 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "story $(TZ=Asia/Tokyo date '+%F %H:%M')" && git pull -q --rebase origin main && git push origin HEAD:main)
