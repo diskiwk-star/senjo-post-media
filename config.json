@@ -13,7 +13,7 @@
   "start_from": "",
   "_start_from": "空なら文書の先頭から。動画名の一部（例 \"2609_\"）を書くと、文書でその動画より前の分は飛ばす",
 
-  "ending": "",
+  "ending": "ending_kagawa.mp4",
   "_ending": "毎回末尾につなぐ動画。空ならつながない。assets/ の中のファイル名、または \"drive:<ファイルID>\"",
 
   "feed_every": 4,
