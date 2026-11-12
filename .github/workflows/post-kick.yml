@@ -8,7 +8,7 @@ name: post-kick (見張り役からの起動)
 # その後は state/done/YYYY-MM-DD.done を見て二重投稿せずに終わる。
 on:
   push:
-    branches-ignore: [main, media]
+    branches-ignore: [main, media, media-story]
     paths: ['kick/request.txt']
 
 permissions:
@@ -38,7 +38,6 @@ jobs:
           echo "slots=$REQ" >> "$GITHUB_OUTPUT"
 
       - name: ffmpeg を用意
-        if: contains(steps.req.outputs.slots, 'post')
         run: |
           which ffmpeg || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
           ffmpeg -version | head -1

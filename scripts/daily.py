@@ -284,14 +284,15 @@ def build_video(segments: list[Path], out: Path, bitrate_k: int | None = None):
 
 # ---------------------------------------------------------------- 配信（media ブランチ）
 
-def push_media(src: Path | None, name: str) -> str:
-    """media ブランチを「この1ファイルだけ」の状態に作り直して push する。src=None で空にする。"""
+def push_media(src: Path | None, name: str, branch: str = "media") -> str:
+    """media ブランチを「この1ファイルだけ」の状態に作り直して push する。src=None で空にする。
+    ストーリーズ用の画像は別ブランチ（media-story）を使い、リールの動画とぶつからないようにする。"""
     repo = os.environ["GITHUB_REPOSITORY"]
     token = os.environ["GH_TOKEN"]
     remote = f"https://x-access-token:{token}@github.com/{repo}.git"
     with tempfile.TemporaryDirectory() as d:
         run = lambda *a: subprocess.run(["git", *a], cwd=d, check=True, capture_output=True)
-        run("init", "-q", "-b", "media")
+        run("init", "-q", "-b", branch)
         run("config", "user.name", "senjo-autopost-bot")
         run("config", "user.email", "actions@github.com")
         (Path(d) / "README.md").write_text(
@@ -300,8 +301,8 @@ def push_media(src: Path | None, name: str) -> str:
             shutil.copy(src, Path(d) / name)
         run("add", "-A")
         run("commit", "-q", "-m", f"media: {name if src else 'cleared'}")
-        run("push", "-q", "--force", remote, "media")
-    return f"https://raw.githubusercontent.com/{repo}/media/{urllib.parse.quote(name)}"
+        run("push", "-q", "--force", remote, branch)
+    return f"https://raw.githubusercontent.com/{repo}/{branch}/{urllib.parse.quote(name)}"
 
 
 def wait_url(url: str, size: int, timeout: int = 300):
@@ -371,6 +372,33 @@ def post_story(url: str, video: bool) -> str:
     else:
         time.sleep(5)
     return publish(c["id"]).get("id", "")
+
+
+def story_images(paths: list[Path], label: str, raise_errors: bool = False) -> int:
+    """フィード用の画像を 9:16 に整えてからストーリーズに1枚ずつ出す。戻り値は出せた枚数。"""
+    from story_image import make_story_image
+    ok = 0
+    work = Path(tempfile.mkdtemp(prefix="senjo_story_"))
+    try:
+        for i, src in enumerate(paths, 1):
+            try:
+                dst = make_story_image(src, work / f"story_{datetime.now(JST):%Y%m%d%H%M%S}_{i}.jpg")
+                url = push_media(dst, dst.name, branch="media-story")
+                wait_url(url, dst.stat().st_size)
+                sid = post_story(url, False)
+                print(f"  ストーリーズに投稿: {sid}（{label} {i}/{len(paths)}・9:16に調整）")
+                ok += 1
+            except Exception as e:
+                if raise_errors:
+                    raise
+                print(f"::warning::ストーリーズへの投稿に失敗（{label} {i}）: {e}")
+            time.sleep(3)
+    finally:
+        try:
+            push_media(None, "", branch="media-story")
+        except Exception:
+            pass
+    return ok
 
 
 def story_after(urls: list[str], video: bool, label: str):
@@ -502,7 +530,8 @@ def post_carousel(item: dict, today: str):
     except Exception:
         pass
     print(f"投稿しました: {media_id} {link}")
-    story_after(urls, False, f"フィード {item['name']}")
+    if CONFIG.get("story_after_post", True):
+        story_images(list(item["images"]), f"フィード {item['name']}")
     return {"media_id": media_id, "permalink": link}
 
 

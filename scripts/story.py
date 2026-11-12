@@ -57,12 +57,18 @@ def main():
         if not (ROOT / it["file"]).exists():
             print(f"::warning::ファイルがありません: {it['file']}")
             continue
-        url = f"https://raw.githubusercontent.com/{repo}/main/{urllib.parse.quote(it['file'])}"
         video = it["file"].lower().endswith(".mp4")
         try:
-            sid = daily.post_story(url, video)
-            print(f"ストーリーズを投稿しました: {sid}（{it['label']}）")
-            ok += 1
+            if video:
+                url = f"https://raw.githubusercontent.com/{repo}/main/{urllib.parse.quote(it['file'])}"
+                sid = daily.post_story(url, True)
+                print(f"ストーリーズを投稿しました: {sid}（{it['label']}）")
+                ok += 1
+            else:
+                # 画像は 9:16（1080×1920）に整えてから出す（4:5 のままだと左右が切れる）
+                if daily.story_images([ROOT / it["file"]], it["label"], raise_errors=True):
+                    print(f"ストーリーズを投稿しました（{it['label']}）")
+                    ok += 1
         except Exception as e:
             print(f"::error::ストーリーズの投稿に失敗（{it['label']}）: {e}")
     if ok:
